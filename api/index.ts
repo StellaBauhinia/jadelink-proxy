@@ -64,8 +64,8 @@ async function getLarkToken(appId: string, appSecret: string): Promise<string> {
 
 // 2. 获取或创建表
 async function ensureTable(token: string, baseToken: string, tableName: string, schema: any[]): Promise<string> {
-  // A. 列出所有表 (Increase page_size to avoid missing existing tables)
-  const listRes = await fetch(`${LARK_API_BASE}/bitable/v1/apps/${baseToken}/tables?page_size=100`, {
+  // A. 列出所有表
+  const listRes = await fetch(`${LARK_API_BASE}/bitable/v1/apps/${baseToken}/tables`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   const listData = await listRes.json() as any;
@@ -85,32 +85,7 @@ async function ensureTable(token: string, baseToken: string, tableName: string, 
   });
   const createData = await createRes.json() as any;
   if (createData.code !== 0) throw new Error(`Create Table Failed: ${createData.msg}`);
-
-  const createdTable = createData.data;
-
-  // Check for conflict (Feishu auto-renames if conflict)
-  if (createdTable.name !== tableName) {
-    console.warn(`Table creation conflict: Requested '${tableName}', got '${createdTable.name}'. Assuming table exists.`);
-    // If we got a conflict, it means the table likely existed but we missed it in the list.
-    // We should probably delete this conflict table to keep things clean.
-    // And then try to find the original again (or just fail and let next retry handle it).
-
-    // Try to delete the conflict table
-    try {
-      await fetch(`${LARK_API_BASE}/bitable/v1/apps/${baseToken}/tables/${createdTable.table_id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-    } catch (e) {
-      console.error('Failed to delete conflict table', e);
-    }
-
-    // Try to find the original table again (maybe it just appeared?)
-    // For now, let's just throw an error so we don't use the wrong table.
-    throw new Error(`Table '${tableName}' exists but was not found in list. Please try again.`);
-  }
-
-  const tableId = createdTable.table_id;
+  const tableId = createData.data.table_id;
 
   // C. 添加字段
   // 并行添加字段
