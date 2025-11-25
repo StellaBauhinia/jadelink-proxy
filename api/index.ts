@@ -179,15 +179,19 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
     const commentsTableId = await ensureTable(token, BASE_TOKEN, TABLE_COMMENTS, COMMENT_SCHEMA);
 
     if (action === 'INIT_PROJECT') {
-      const { projectName, nickname } = payload;
+      const { projectName, nickname, pages } = payload;
       const projectId = `proj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+      const config = {
+        pages: pages || []
+      };
 
       await createRecord(token, BASE_TOKEN, projectsTableId, {
         id: projectId,
         name: projectName,
         owner: nickname,
         createdAt: Date.now(),
-        config: JSON.stringify({})
+        config: JSON.stringify(config)
       });
 
       return res.status(200).json({
@@ -197,6 +201,26 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
           backendType: 'LARK_PROXY'
         }
       });
+    }
+
+    if (action === 'UPDATE_PROJECT_CONFIG') {
+      const { projectId, config } = payload;
+      if (!projectId) return res.status(400).json({ success: false, message: 'Missing projectId' });
+
+      const filter = `CurrentValue.[id] = "${projectId}"`;
+      const records = await searchRecords(token, BASE_TOKEN, projectsTableId, filter);
+
+      if (records.length === 0) {
+        return res.status(404).json({ success: false, message: 'Project not found' });
+      }
+
+      const recordId = records[0].record_id;
+
+      await updateRecord(token, BASE_TOKEN, projectsTableId, recordId, {
+        config: JSON.stringify(config)
+      });
+
+      return res.status(200).json({ success: true, message: 'Config updated' });
     }
 
     if (action === 'GET_COMMENTS') {
