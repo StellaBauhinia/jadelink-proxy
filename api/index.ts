@@ -3,50 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // --- 配置区域 ---
 const LARK_API_BASE = 'https://open.feishu.cn/open-apis';
 
-// 表名常量
-const TABLE_PROJECTS = 'JadeLink_Projects';
-const TABLE_COMMENTS = 'JadeLink_Comments';
 
-// 字段类型常量
-const FIELD_TYPE = {
-  TEXT: 1,
-  NUMBER: 2,
-  SINGLE_SELECT: 3,
-  MULTI_SELECT: 4,
-  DATE: 5,
-  CHECKBOX: 7,
-  USER: 11,
-  PHONE: 13,
-  URL: 15,
-  ATTACHMENT: 17,
-  LOOKUP: 19,
-  FORMULA: 20,
-  CREATED_BY: 1001,
-  CREATED_TIME: 1002,
-  LAST_MODIFIED_BY: 1003,
-  LAST_MODIFIED_TIME: 1004
-};
-
-// 定义我们需要在飞书表格中创建的字段
-const PROJECT_SCHEMA = [
-  { field_name: 'id', type: FIELD_TYPE.TEXT }, // Project ID
-  { field_name: 'name', type: FIELD_TYPE.TEXT }, // Project Name
-  { field_name: 'owner', type: FIELD_TYPE.TEXT }, // Creator Nickname
-  { field_name: 'createdAt', type: FIELD_TYPE.DATE },
-  { field_name: 'config', type: FIELD_TYPE.TEXT } // JSON string for extra config
-];
-
-const COMMENT_SCHEMA = [
-  { field_name: 'id', type: FIELD_TYPE.TEXT }, // Comment ID or Reply ID
-  { field_name: 'projectId', type: FIELD_TYPE.TEXT }, // 关联的项目ID
-  { field_name: 'type', type: FIELD_TYPE.TEXT }, // 'THREAD' | 'REPLY'
-  { field_name: 'parentId', type: FIELD_TYPE.TEXT }, // Thread ID (if reply)
-  { field_name: 'pageUrl', type: FIELD_TYPE.TEXT },
-  { field_name: 'selector', type: FIELD_TYPE.TEXT },
-  { field_name: 'content', type: FIELD_TYPE.TEXT }, // JSON string: { text, author, avatarUrl, timestamp }
-  { field_name: 'status', type: FIELD_TYPE.TEXT }, // 'Open', 'Resolved' etc.
-  { field_name: 'timestamp', type: FIELD_TYPE.DATE } // 原始时间戳
-];
 
 // --- 辅助函数 ---
 
@@ -62,43 +19,7 @@ async function getLarkToken(appId: string, appSecret: string): Promise<string> {
   return data.tenant_access_token;
 }
 
-// 2. 获取或创建表
-async function ensureTable(token: string, baseToken: string, tableName: string, schema: any[]): Promise<string> {
-  // A. 列出所有表
-  const listRes = await fetch(`${LARK_API_BASE}/bitable/v1/apps/${baseToken}/tables`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  const listData = await listRes.json() as any;
-  if (listData.code !== 0) throw new Error(`List Tables Failed: ${listData.msg}`);
 
-  const existingTable = listData.data.items?.find((t: any) => t.name === tableName);
-
-  if (existingTable) {
-    return existingTable.table_id;
-  }
-
-  // B. 创建表
-  const createRes = await fetch(`${LARK_API_BASE}/bitable/v1/apps/${baseToken}/tables`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ table: { name: tableName } })
-  });
-  const createData = await createRes.json() as any;
-  if (createData.code !== 0) throw new Error(`Create Table Failed: ${createData.msg}`);
-  const tableId = createData.data.table_id;
-
-  // C. 添加字段
-  // 并行添加字段
-  await Promise.all(schema.map(f =>
-    fetch(`${LARK_API_BASE}/bitable/v1/apps/${baseToken}/tables/${tableId}/fields`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ field_name: f.field_name, type: f.type })
-    })
-  ));
-
-  return tableId;
-}
 
 // 3. 搜索记录 (List records with filter)
 async function searchRecords(token: string, baseToken: string, tableId: string, filter?: string) {
@@ -166,17 +87,18 @@ const handler = async (req: VercelRequest, res: VercelResponse) => {
   const APP_ID = process.env.LARK_APP_ID;
   const APP_SECRET = process.env.LARK_APP_SECRET;
   const BASE_TOKEN = process.env.LARK_BASE_TOKEN;
+  const TABLE_PROJECTS = process.env.LARK_TABLE_PROJECTS;
+  const TABLE_COMMENTS = process.env.LARK_TABLE_COMMENTS;
 
-  if (!APP_ID || !APP_SECRET || !BASE_TOKEN) {
+  if (!APP_ID || !APP_SECRET || !BASE_TOKEN || !TABLE_PROJECTS || !TABLE_COMMENTS) {
     return res.status(500).json({ success: false, message: "Server Config Error: Missing Envs" });
   }
 
   try {
     const token = await getLarkToken(APP_ID, APP_SECRET);
 
-    // 确保表存在 (Lazy init)
-    const projectsTableId = await ensureTable(token, BASE_TOKEN, TABLE_PROJECTS, PROJECT_SCHEMA);
-    const commentsTableId = await ensureTable(token, BASE_TOKEN, TABLE_COMMENTS, COMMENT_SCHEMA);
+    const projectsTableId = TABLE_PROJECTS;
+    const commentsTableId = TABLE_COMMENTS;
 
     if (action === 'INIT_PROJECT') {
       const { projectName, nickname, pages } = payload;
